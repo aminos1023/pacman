@@ -1,7 +1,7 @@
-To build the game type first: 
-cabal clean
-And then:
+### To build the game 
+delete the dist-newstyle folder
+### And then type:
 cabal build
 
-To run the game type:
+### To run the game type:
 cabal run
