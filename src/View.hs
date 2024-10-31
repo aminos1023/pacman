@@ -7,10 +7,9 @@ import Model
 render :: GameState -> IO Picture
 render game = pure $ pictures [drawPacMan (pacMan game), drawGhosts (ghosts game), drawPellets (pellets game)]
 
-
 -- Draw PacMan
 drawPacMan :: PacMan -> Picture
-drawPacMan (PacMan x y) = translate x y $ color yellow $ circleSolid 10
+drawPacMan (PacMan x y _) = translate x y $ color yellow $ circleSolid 10
 
 -- Draw Ghosts
 drawGhosts :: [Ghost] -> Picture

@@ -14,4 +14,4 @@ background = black
 
 -- Run the game
 main :: IO ()
-main = playIO window background 60 initialState render handleInput (const return)
+main = playIO window background 60 initialState render handleInput update
