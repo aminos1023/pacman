@@ -5,14 +5,25 @@ import System.Random (StdGen, mkStdGen)
 -- Define Direction type
 data Direction = DirUp | DirDown | DirLeft | DirRight | None deriving (Eq, Show)
 
--- Define types for PacMan, Ghost, and Pellet
+-- Define GhostType
+data GhostType = Blinky | Pinky | Inky | Clyde deriving (Eq, Show)
+
+-- Define Ghost with additional fields
+data Ghost = Ghost { 
+    ghostX :: Float, 
+    ghostY :: Float, 
+    ghostDirection :: Direction,
+    ghostType :: GhostType
+}
+
+-- Define PacMan
 data PacMan = PacMan { 
     pacX :: Float, 
     pacY :: Float, 
     direction :: Direction
 }
 
-data Ghost = Ghost { ghostX :: Float, ghostY :: Float }
+-- Define Pellet
 data Pellet = Pellet { pelletX :: Float, pelletY :: Float }
 
 -- GameState definition
@@ -29,7 +40,12 @@ data GameState = GameState
 initialState :: GameState
 initialState = GameState 
     { pacMan = PacMan 0 0 None
-    , ghosts = [Ghost (-100) 100]
+    , ghosts = 
+        [ Ghost (-100) 100 DirLeft Blinky
+        , Ghost 100 100 DirDown Pinky
+        , Ghost (-100) (-100) DirUp Inky
+        , Ghost 100 (-100) DirRight Clyde
+        ]
     , pellets = [Pellet 50 50, Pellet (-50) (-50)]
     , score = 0
     , isPaused = False
