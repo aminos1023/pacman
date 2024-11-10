@@ -7,7 +7,7 @@ import Controller
 
 -- Set up the display
 window :: Display
-window = InWindow "Pacman" (800, 600) (100, 100)
+window = InWindow "Pacman" (900, 620) (100, 100)
 
 background :: Color
 background = black
