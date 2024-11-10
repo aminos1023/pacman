@@ -1,4 +1,4 @@
-module Model where
+module Model where  -- Export all definitions by default
 
 import System.Random (StdGen, mkStdGen, Random(randomR))
 import Data.List (any)

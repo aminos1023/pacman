@@ -2,7 +2,7 @@ module Controller where
 
 import Graphics.Gloss.Interface.IO.Game
 import Model
-import Data.List (minimumBy)
+import Data.List (minimumBy, delete)
 import Data.Function (on)
 
 -- Handle input events
@@ -63,14 +63,16 @@ moveGhost deltaTime pacman walls ghost@(Ghost x y r dir gType) =
         (dx, dy) = directionToDelta dir speed deltaTime
         newX = x + dx
         newY = y + dy
-    in if collidesWithWalls newX newY r walls
+        collision = collidesWithWalls newX newY r walls
+    in if collision
        then
-           -- Collision detected, bounce off by reversing direction and moving
+           -- Collision detected, bounce off by reversing direction
            let bouncedDir = oppositeDirection dir
                (dxBounce, dyBounce) = directionToDelta bouncedDir speed deltaTime
                bounceX = x + dxBounce
                bounceY = y + dyBounce
-           in if collidesWithWalls bounceX bounceY r walls
+               bounceCollision = collidesWithWalls bounceX bounceY r walls
+           in if bounceCollision
               then
                   -- Can't move in opposite direction either, stay in place
                   ghost
@@ -80,18 +82,19 @@ moveGhost deltaTime pacman walls ghost@(Ghost x y r dir gType) =
        else
            -- No collision, proceed with AI direction
            let aiDir = determineDirection ghost pacman walls
-               -- Avoid changing direction in the same frame as a bounce
-               newDir = if dir == aiDir then dir else aiDir
-               (dxAi, dyAi) = directionToDelta newDir speed deltaTime
+               -- Avoid immediate reversal by excluding opposite direction
+               aiDir' = if aiDir == oppositeDirection dir then dir else aiDir
+               (dxAi, dyAi) = directionToDelta aiDir' speed deltaTime
                updatedX = x + dxAi
                updatedY = y + dyAi
-           in if collidesWithWalls updatedX updatedY r walls
+               aiCollision = collidesWithWalls updatedX updatedY r walls
+           in if aiCollision
               then
                   -- Can't move in AI direction, continue in current direction
                   ghost { ghostX = newX, ghostY = newY }
               else
                   -- Move and update direction to AI direction
-                  ghost { ghostX = updatedX, ghostY = updatedY, ghostDirection = newDir }
+                  ghost { ghostX = updatedX, ghostY = updatedY, ghostDirection = aiDir' }
 
 -- Determine ghost's direction based on its type and walls
 determineDirection :: Ghost -> PacMan -> [Wall] -> Direction
@@ -103,7 +106,9 @@ determineDirection ghost pacman walls = newDir
       Inky   -> getInkyTarget pacman ghost
       Clyde  -> getClydeTarget pacman ghost
     possibleDirs = [DirUp, DirDown, DirLeft, DirRight]
-    validDirs = filter (\d -> not (willCollide (ghostX ghost, ghostY ghost) d walls (ghostRadius ghost))) possibleDirs
+    -- Exclude opposite direction to prevent immediate reversal
+    dirsExcludingOpposite = delete (oppositeDirection (ghostDirection ghost)) possibleDirs
+    validDirs = filter (\d -> not (willCollide (ghostX ghost, ghostY ghost) d walls (ghostRadius ghost))) dirsExcludingOpposite
     newDir = if null validDirs
              then ghostDirection ghost  -- No valid moves, keep current direction
              else chooseBestDirection (ghostX ghost, ghostY ghost) (targetX, targetY) validDirs
@@ -165,3 +170,4 @@ directionToDelta dir speed deltaTime = case dir of
   DirRight -> (speed * deltaTime, 0)
   None     -> (0, 0)
 
+-- Note: Use 'distance' from Model.hs
