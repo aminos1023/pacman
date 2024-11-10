@@ -7,11 +7,13 @@ import Controller
 
 -- Set up the display
 window :: Display
-window = InWindow "Pacman" (900, 620) (100, 100)
+window = InWindow "Pac-Man" (800, 600) (100, 100)
 
 background :: Color
 background = black
 
 -- Run the game
 main :: IO ()
-main = playIO window background 60 initialState render handleInput update
+main = do
+    gameState <- initialState  -- initialState is in IO to generate random pellets
+    playIO window background 60 gameState render handleInput update

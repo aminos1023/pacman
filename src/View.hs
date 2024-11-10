@@ -5,9 +5,15 @@ import Model
 
 -- Render state of game
 render :: GameState -> IO Picture
-render game = pure $ pictures [drawPacMan (pacMan game), drawGhosts (ghosts game), drawPellets (pellets game), drawWalls (walls game)]
+render game = pure $ pictures
+    [ drawWalls (walls game)    -- Draw walls first
+    , drawPellets (pellets game)
+    , drawGhosts (ghosts game)
+    , drawPacMan (pacMan game)
+    , drawPauseOverlay game     -- Display pause message if game is paused
+    ]
 
--- Draw PacMan
+-- Draw Pac-Man
 drawPacMan :: PacMan -> Picture
 drawPacMan pacman = translate (pacX pacman) (pacY pacman) $ color yellow $ circleSolid 10
 
@@ -34,5 +40,10 @@ drawWalls :: [Wall] -> Picture
 drawWalls = pictures . map drawWall
 
 drawWall :: Wall -> Picture
-drawWall (Wall x y w h) = translate x y $ color blue $ rectangleWire w h
+drawWall (Wall x y w h) = translate x y $ color blue $ rectangleSolid w h
 
+-- Draw the pause overlay if the game is paused
+drawPauseOverlay :: GameState -> Picture
+drawPauseOverlay game
+  | isPaused game = translate (-100) 0 $ color white $ scale 0.3 0.3 $ text "Paused"
+  | otherwise = blank

@@ -2,31 +2,49 @@ module Controller where
 
 import Graphics.Gloss.Interface.IO.Game
 import Model
+import Data.List (minimumBy)
+import Data.Function (on)
 
 -- Handle input events
 handleInput :: Event -> GameState -> IO GameState
-handleInput (EventKey (SpecialKey KeyUp) Down _ _) game = pure $ setPacManDirection DirUp game
-handleInput (EventKey (SpecialKey KeyDown) Down _ _) game = pure $ setPacManDirection DirDown game
-handleInput (EventKey (SpecialKey KeyLeft) Down _ _) game = pure $ setPacManDirection DirLeft game
-handleInput (EventKey (SpecialKey KeyRight) Down _ _) game = pure $ setPacManDirection DirRight game
+handleInput (EventKey (SpecialKey KeyUp) Down _ _) game
+  | not (isPaused game) = pure $ setPacManDirection DirUp game
+  | otherwise = pure game
+handleInput (EventKey (SpecialKey KeyDown) Down _ _) game
+  | not (isPaused game) = pure $ setPacManDirection DirDown game
+  | otherwise = pure game
+handleInput (EventKey (SpecialKey KeyLeft) Down _ _) game
+  | not (isPaused game) = pure $ setPacManDirection DirLeft game
+  | otherwise = pure game
+handleInput (EventKey (SpecialKey KeyRight) Down _ _) game
+  | not (isPaused game) = pure $ setPacManDirection DirRight game
+  | otherwise = pure game
+handleInput (EventKey (SpecialKey KeySpace) Down _ _) game = pure $ togglePause game
+handleInput (EventKey (Char 'p') Down _ _) game = pure $ togglePause game
 handleInput _ game = pure game
 
--- Set PacMan's direction
+-- Toggle the game's paused state
+togglePause :: GameState -> GameState
+togglePause game = game { isPaused = not (isPaused game) }
+
+-- Set Pac-Man's direction
 setPacManDirection :: Direction -> GameState -> GameState
 setPacManDirection dir game = game { pacMan = (pacMan game) { direction = dir } }
 
 -- Update game state
 update :: Float -> GameState -> IO GameState
-update deltaTime game = pure $ moveGameObjects deltaTime game
+update deltaTime game
+  | isPaused game = pure game  -- Do not update if the game is paused
+  | otherwise = pure $ moveGameObjects deltaTime game
 
 -- Move game objects
 moveGameObjects :: Float -> GameState -> GameState
 moveGameObjects deltaTime game = game
     { pacMan = movePacMan deltaTime (pacMan game) (walls game)
-    , ghosts = map (bounceGhost (walls game) . moveGhost deltaTime (pacMan game)) (ghosts game)
+    , ghosts = map (moveGhost deltaTime (pacMan game) (walls game)) (ghosts game)
     }
 
--- Move PacMan based on his direction
+-- Move Pac-Man based on his direction
 movePacMan :: Float -> PacMan -> [Wall] -> PacMan
 movePacMan deltaTime pacman@(PacMan x y r dir) walls
   | collidesWithWalls newX newY r walls = pacman  -- Stop movement if collision detected
@@ -38,30 +56,97 @@ movePacMan deltaTime pacman@(PacMan x y r dir) walls
     newY = y + dy
 
 -- Move a ghost
-moveGhost :: Float -> PacMan -> Ghost -> Ghost
-moveGhost deltaTime pacman ghost@(Ghost x y _ _ gType) = ghost {
-    ghostX = newX,
-    ghostY = newY,
-    ghostDirection = newDir
-  }
+moveGhost :: Float -> PacMan -> [Wall] -> Ghost -> Ghost
+moveGhost deltaTime pacman walls ghost@(Ghost x y r dir gType) =
+    let speed = 80.0  -- Units per second
+        -- Attempt to move in the current direction
+        (dx, dy) = directionToDelta dir speed deltaTime
+        newX = x + dx
+        newY = y + dy
+    in if collidesWithWalls newX newY r walls
+       then
+           -- Collision detected, bounce off by reversing direction and moving
+           let bouncedDir = oppositeDirection dir
+               (dxBounce, dyBounce) = directionToDelta bouncedDir speed deltaTime
+               bounceX = x + dxBounce
+               bounceY = y + dyBounce
+           in if collidesWithWalls bounceX bounceY r walls
+              then
+                  -- Can't move in opposite direction either, stay in place
+                  ghost
+              else
+                  -- Update position and direction after bouncing
+                  ghost { ghostX = bounceX, ghostY = bounceY, ghostDirection = bouncedDir }
+       else
+           -- No collision, proceed with AI direction
+           let aiDir = determineDirection ghost pacman walls
+               -- Avoid changing direction in the same frame as a bounce
+               newDir = if dir == aiDir then dir else aiDir
+               (dxAi, dyAi) = directionToDelta newDir speed deltaTime
+               updatedX = x + dxAi
+               updatedY = y + dyAi
+           in if collidesWithWalls updatedX updatedY r walls
+              then
+                  -- Can't move in AI direction, continue in current direction
+                  ghost { ghostX = newX, ghostY = newY }
+              else
+                  -- Move and update direction to AI direction
+                  ghost { ghostX = updatedX, ghostY = updatedY, ghostDirection = newDir }
+
+-- Determine ghost's direction based on its type and walls
+determineDirection :: Ghost -> PacMan -> [Wall] -> Direction
+determineDirection ghost pacman walls = newDir
   where
-    speed = 60.0  -- Units per second
-    newDir = case gType of
-      Blinky -> blinkyBehavior pacman ghost
-      Pinky  -> pinkyBehavior pacman ghost
-      Inky   -> inkyBehavior pacman ghost
-      Clyde  -> clydeBehavior pacman ghost
-    (dx, dy) = directionToDelta newDir speed deltaTime
+    (targetX, targetY) = case ghostType ghost of
+      Blinky -> (pacX pacman, pacY pacman)
+      Pinky  -> getPinkyTarget pacman
+      Inky   -> getInkyTarget pacman ghost
+      Clyde  -> getClydeTarget pacman ghost
+    possibleDirs = [DirUp, DirDown, DirLeft, DirRight]
+    validDirs = filter (\d -> not (willCollide (ghostX ghost, ghostY ghost) d walls (ghostRadius ghost))) possibleDirs
+    newDir = if null validDirs
+             then ghostDirection ghost  -- No valid moves, keep current direction
+             else chooseBestDirection (ghostX ghost, ghostY ghost) (targetX, targetY) validDirs
+
+-- Check if moving in a direction will cause collision
+willCollide :: (Float, Float) -> Direction -> [Wall] -> Float -> Bool
+willCollide (x, y) dir walls r = collidesWithWalls newX newY r walls
+  where
+    speed = 2.0  -- Small step to check collision
+    deltaTime = 0.016  -- Assume 60 FPS
+    (dx, dy) = directionToDelta dir speed deltaTime
     newX = x + dx
     newY = y + dy
 
--- Ghosts bounce off from walls and window
-bounceGhost :: [Wall] -> Ghost -> Ghost
-bounceGhost ws ghost@(Ghost x y r dir _)
-  | ghostCollidesWithWalls ghost ws = ghost { ghostDirection = oppositeDirection dir }
-  | x - r < -400 || x + r > 400 = ghost { ghostDirection = oppositeDirection dir, ghostX = if x - r < -400 then -400 + r else 400 - r }
-  | y - r < -300 || y + r > 300 = ghost { ghostDirection = oppositeDirection dir, ghostY = if y - r < -300 then -300 + r else 300 - r }
-  | otherwise = ghost
+-- Choose the best direction towards the target
+chooseBestDirection :: (Float, Float) -> (Float, Float) -> [Direction] -> Direction
+chooseBestDirection (x, y) (tx, ty) dirs = fst $ minimumBy (compare `on` snd) distances
+  where
+    distances = [(dir, distToTarget dir) | dir <- dirs]
+    distToTarget dir =
+      let (dx, dy) = directionToDelta dir 1.0 1.0
+      in distance (x + dx) (y + dy) tx ty
+
+-- Get Pinky's target (ahead of Pac-Man)
+getPinkyTarget :: PacMan -> (Float, Float)
+getPinkyTarget (PacMan px py _ pDir) = case pDir of
+  DirUp    -> (px, py + offset)
+  DirDown  -> (px, py - offset)
+  DirLeft  -> (px - offset, py)
+  DirRight -> (px + offset, py)
+  None     -> (px, py)
+  where offset = 80.0
+
+-- Get Inky's target (mirror of Pac-Man's position)
+getInkyTarget :: PacMan -> Ghost -> (Float, Float)
+getInkyTarget (PacMan px py _ _) (Ghost gx gy _ _ _) = (2 * px - gx, 2 * py - gy)
+
+-- Get Clyde's target (chase or scatter)
+getClydeTarget :: PacMan -> Ghost -> (Float, Float)
+getClydeTarget pacman ghost@(Ghost x y _ _ _) =
+  if distance x y (pacX pacman) (pacY pacman) > 100.0
+  then (pacX pacman, pacY pacman)
+  else (-300, -300)  -- Clyde's scatter corner
 
 -- Get the opposite direction
 oppositeDirection :: Direction -> Direction
@@ -71,60 +156,12 @@ oppositeDirection DirLeft  = DirRight
 oppositeDirection DirRight = DirLeft
 oppositeDirection None     = None
 
-
-
--- Blinky's behavior: Chases Pac-Man directly
-blinkyBehavior :: PacMan -> Ghost -> Direction
-blinkyBehavior (PacMan px py _ _) (Ghost x y _ _ _) = newDir
-  where
-    deltaX = px - x
-    deltaY = py - y
-    newDir = chooseDirection deltaX deltaY
-
--- Pinky's behavior: Attempts to ambush Pac-Man
-pinkyBehavior :: PacMan -> Ghost -> Direction
-pinkyBehavior (PacMan px py _ pDir) (Ghost x y _ _ _) = newDir
-  where
-    offset = 80.0  -- Adjust offset as needed
-    (targetX, targetY) = case pDir of
-      DirUp    -> (px, py + offset)
-      DirDown  -> (px, py - offset)
-      DirLeft  -> (px - offset, py)
-      DirRight -> (px + offset, py)
-      None     -> (px, py)
-    deltaX = targetX - x
-    deltaY = targetY - y
-    newDir = chooseDirection deltaX deltaY
-
--- Inky's behavior: For simplicity, we'll make Inky continue in the same direction
-inkyBehavior :: PacMan -> Ghost -> Direction
-inkyBehavior _ ghost = ghostDirection ghost
-
--- Clyde's behavior: Switches between chasing and wandering
-clydeBehavior :: PacMan -> Ghost -> Direction
-clydeBehavior pacman ghost@(Ghost x y _ _ _) =
-    if distance > 100.0
-    then blinkyBehavior pacman ghost
-    else wanderBehavior ghost
-  where
-    PacMan px py _ _ = pacman
-    distance = sqrt ((px - x) * (px - x) + (py - y) * (py - y))
-
--- Choose direction based on deltas
-chooseDirection :: Float -> Float -> Direction
-chooseDirection deltaX deltaY
-  | abs deltaX > abs deltaY = if deltaX > 0 then DirRight else DirLeft
-  | otherwise               = if deltaY > 0 then DirUp else DirDown
-
--- Wander behavior for Clyde
-wanderBehavior :: Ghost -> Direction
-wanderBehavior ghost = ghostDirection ghost  -- Keep current direction
-
 -- Convert direction to movement delta
 directionToDelta :: Direction -> Float -> Float -> (Float, Float)
 directionToDelta dir speed deltaTime = case dir of
   DirUp    -> (0, speed * deltaTime)
-  DirDown  -> (0,-speed * deltaTime)
+  DirDown  -> (0, -speed * deltaTime)
   DirLeft  -> (-speed * deltaTime, 0)
   DirRight -> (speed * deltaTime, 0)
   None     -> (0, 0)
+
