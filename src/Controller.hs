@@ -4,23 +4,28 @@ import Graphics.Gloss.Interface.IO.Game
 import Model
 import Data.List (minimumBy, delete)
 import Data.Function (on)
+import System.Random (StdGen, Random(randomR), randomR)
 
 -- Handle input events
 handleInput :: Event -> GameState -> IO GameState
 handleInput (EventKey (SpecialKey KeyUp) Down _ _) game
-  | not (isPaused game) = pure $ setPacManDirection DirUp game
+  | not (isPaused game) && not (isGameOver game) = pure $ setPacManDirection DirUp game
   | otherwise = pure game
 handleInput (EventKey (SpecialKey KeyDown) Down _ _) game
-  | not (isPaused game) = pure $ setPacManDirection DirDown game
+  | not (isPaused game) && not (isGameOver game) = pure $ setPacManDirection DirDown game
   | otherwise = pure game
 handleInput (EventKey (SpecialKey KeyLeft) Down _ _) game
-  | not (isPaused game) = pure $ setPacManDirection DirLeft game
+  | not (isPaused game) && not (isGameOver game) = pure $ setPacManDirection DirLeft game
   | otherwise = pure game
 handleInput (EventKey (SpecialKey KeyRight) Down _ _) game
-  | not (isPaused game) = pure $ setPacManDirection DirRight game
+  | not (isPaused game) && not (isGameOver game) = pure $ setPacManDirection DirRight game
   | otherwise = pure game
-handleInput (EventKey (SpecialKey KeySpace) Down _ _) game = pure $ togglePause game
-handleInput (EventKey (Char 'p') Down _ _) game = pure $ togglePause game
+handleInput (EventKey (SpecialKey KeySpace) Down _ _) game
+  | not (isGameOver game) = pure $ togglePause game
+  | otherwise = pure game
+handleInput (EventKey (Char 'p') Down _ _) game
+  | not (isGameOver game) = pure $ togglePause game
+  | otherwise = pure game
 handleInput _ game = pure game
 
 -- Toggle the game's paused state
@@ -34,7 +39,7 @@ setPacManDirection dir game = game { pacMan = (pacMan game) { direction = dir } 
 -- Update game state
 update :: Float -> GameState -> IO GameState
 update deltaTime game
-  | isPaused game = pure game  -- Do not update if the game is paused
+  | isPaused game || isGameOver game = pure game  -- Do not update if the game is paused or game over
   | otherwise = pure $ updateGameState deltaTime game
 
 -- Update the game state, including moving objects and handling collisions
@@ -42,13 +47,15 @@ updateGameState :: Float -> GameState -> GameState
 updateGameState deltaTime game =
     let gameAfterMovement = moveGameObjects deltaTime game
         gameAfterPelletCollection = handlePelletCollection gameAfterMovement
-    in gameAfterPelletCollection
+        gameAfterGhostCollision = handleGhostCollision gameAfterPelletCollection
+        gameAfterLevelCheck = checkLevelCompletion gameAfterGhostCollision
+    in gameAfterLevelCheck
 
 -- Move game objects
 moveGameObjects :: Float -> GameState -> GameState
 moveGameObjects deltaTime game = game
     { pacMan = movePacMan deltaTime (pacMan game) (walls game)
-    , ghosts = map (moveGhost deltaTime (pacMan game) (walls game)) (ghosts game)
+    , ghosts = map (moveGhost deltaTime (pacMan game) (walls game) (level game)) (ghosts game)
     }
 
 -- Move Pac-Man based on his direction
@@ -77,10 +84,86 @@ pacManCollidesWithPellet pac pellet =
     let distanceBetween = distance (pacX pac) (pacY pac) (pelletX pellet) (pelletY pellet)
     in distanceBetween < (pacRadius pac + 5)  -- 5 is the pellet radius
 
+-- Handle collision between Pac-Man and ghosts
+handleGhostCollision :: GameState -> GameState
+handleGhostCollision game =
+    let pac = pacMan game
+        collision = any (pacManCollidesWithGhost pac) (ghosts game)
+    in if collision
+       then game { isGameOver = True }
+       else game
+
+-- Check if Pac-Man collides with a ghost
+pacManCollidesWithGhost :: PacMan -> Ghost -> Bool
+pacManCollidesWithGhost pac ghost =
+    let distanceBetween = distance (pacX pac) (pacY pac) (ghostX ghost) (ghostY ghost)
+    in distanceBetween < (pacRadius pac + ghostRadius ghost)
+
+-- Check if all pellets have been collected and advance level
+checkLevelCompletion :: GameState -> GameState
+checkLevelCompletion game
+  | null (pellets game) = advanceLevel game
+  | otherwise = game
+
+-- Advance to the next level
+advanceLevel :: GameState -> GameState
+advanceLevel game =
+    let newLevel = level game + 1
+        -- Generate new pellets
+        (newPellets, newRng1) = regeneratePellets (rngState game) (walls game) occupiedPositions 10
+        -- Change color scheme
+        (newColorScheme, newRng2) = generateNewColorScheme newRng1
+        -- Update game state
+        newGameState = game { level = newLevel
+                            , pellets = newPellets
+                            , rngState = newRng2
+                            , colorScheme = newColorScheme
+                            }
+    in newGameState
+  where
+    occupiedPositions = map (\g -> (ghostX g, ghostY g)) (ghosts game) ++ [(pacX (pacMan game), pacY (pacMan game))]
+
+-- Regenerate pellets
+regeneratePellets :: StdGen -> [Wall] -> [(Float, Float)] -> Int -> ([Pellet], StdGen)
+regeneratePellets rng walls occupiedPositions n = go rng n [] occupiedPositions
+  where
+    go gen 0 acc _ = (acc, gen)
+    go gen count acc occupied =
+        let (x, gen1) = randomR (-380, 380) gen
+            (y, gen2) = randomR (-260, 260) gen1
+        in if isWallAt x y walls || isOccupied x y occupied
+           then go gen2 count acc occupied  -- Retry without decreasing count
+           else go gen2 (count - 1) (Pellet x y : acc) ((x, y) : occupied)
+    isOccupied x y positions = any (\(ox, oy) -> distance x y ox oy < 20) positions
+
+-- Generate a new random color scheme
+generateNewColorScheme :: StdGen -> (ColorScheme, StdGen)
+generateNewColorScheme rng =
+    let (r1, rng1) = randomR (0.0, 1.0) rng
+        (g1, rng2) = randomR (0.0, 1.0) rng1
+        (b1, rng3) = randomR (0.0, 1.0) rng2
+        (r2, rng4) = randomR (0.0, 1.0) rng3
+        (g2, rng5) = randomR (0.0, 1.0) rng4
+        (b2, rng6) = randomR (0.0, 1.0) rng5
+        (r3, rng7) = randomR (0.0, 1.0) rng6
+        (g3, rng8) = randomR (0.0, 1.0) rng7
+        (b3, rng9) = randomR (0.0, 1.0) rng8
+        newWallColor = makeColor r1 g1 b1 1.0
+        newBackgroundColor = makeColor r2 g2 b2 1.0
+        newScoreColor = makeColor r3 g3 b3 1.0
+        newColorScheme = ColorScheme {
+            wallColor = newWallColor,
+            backgroundColor = newBackgroundColor,
+            scoreColor = newScoreColor
+        }
+    in (newColorScheme, rng9)
+
 -- Move a ghost
-moveGhost :: Float -> PacMan -> [Wall] -> Ghost -> Ghost
-moveGhost deltaTime pacman walls ghost@(Ghost x y r dir gType) =
-    let speed = 80.0  -- Units per second
+moveGhost :: Float -> PacMan -> [Wall] -> Int -> Ghost -> Ghost
+moveGhost deltaTime pacman walls level ghost@(Ghost x y r dir gType) =
+    let baseSpeed = 80.0  -- Base speed
+        initialSpeed = baseSpeed * 0.25  -- Starting speed at 25% of base
+        speed = initialSpeed * fromIntegral level  -- Speed increases per level
         -- Attempt to move in the current direction
         (dx, dy) = directionToDelta dir speed deltaTime
         newX = x + dx

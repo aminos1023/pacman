@@ -9,6 +9,7 @@ import Controller
 window :: Display
 window = InWindow "Pac-Man" (800, 600) (100, 100)
 
+-- Fixed background color (will be overridden in render)
 background :: Color
 background = black
 
