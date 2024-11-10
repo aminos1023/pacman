@@ -5,7 +5,7 @@ import Model
 import View
 import Controller
 
--- Set up the display
+-- Set up main window
 window :: Display
 window = InWindow "Pac-Man" (800, 600) (100, 100)
 
@@ -13,7 +13,7 @@ window = InWindow "Pac-Man" (800, 600) (100, 100)
 background :: Color
 background = black
 
--- Run the game
+-- Runs the game
 main :: IO ()
 main = do
     gameState <- initialState  -- initialState is in IO to generate random pellets

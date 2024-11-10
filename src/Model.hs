@@ -147,8 +147,8 @@ pacmanMaze =
     , Wall (-100) (-150) 20 100 -- Lower-left vertical wall
     , Wall (100) (-150) 20 100  -- Lower-right vertical wall
     , Wall 0 200 20 80          -- Center-top vertical wall (above middle-top horizontal)
-    , Wall (-300) 0 20 200      -- Far-left vertical wall
-    , Wall (300) 0 20 200       -- Far-right vertical wall
+    , Wall (-320) 0 20 200      -- Far-left vertical wall
+    , Wall (320) 0 20 200       -- Far-right vertical wall
     ]
 
 -- Collision detection for Pac-Man and Ghosts
