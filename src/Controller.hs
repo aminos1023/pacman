@@ -15,7 +15,7 @@ handleInput _ game = pure game
 -- Move PacMan
 -- Move PacMan
 movePacMan :: Float -> Float -> GameState -> GameState
-movePacMan dx dy game = game { pacMan = PacMan (newPacX) (newPacY) }
+movePacMan dx dy game = game { pacMan = PacMan newPacX newPacY }
   where
     PacMan currentX currentY = pacMan game
     newPacX = currentX + dx
