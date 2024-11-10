@@ -10,6 +10,7 @@ render game = pure $ pictures
     , drawPellets (pellets game)
     , drawGhosts (ghosts game)
     , drawPacMan (pacMan game)
+    , drawScore (score game)    -- Display the score
     , drawPauseOverlay game     -- Display pause message if game is paused
     ]
 
@@ -47,3 +48,10 @@ drawPauseOverlay :: GameState -> Picture
 drawPauseOverlay game
   | isPaused game = translate (-100) 0 $ color white $ scale 0.3 0.3 $ text "Paused"
   | otherwise = blank
+
+-- Draw the score at the top right corner
+drawScore :: Int -> Picture
+drawScore sc = translate posX posY $ color white $ scale 0.15 0.15 $ text ("Score: " ++ show sc)
+  where
+    posX = 250   -- Adjust these values based on your window size
+    posY = 250

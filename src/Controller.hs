@@ -35,7 +35,14 @@ setPacManDirection dir game = game { pacMan = (pacMan game) { direction = dir } 
 update :: Float -> GameState -> IO GameState
 update deltaTime game
   | isPaused game = pure game  -- Do not update if the game is paused
-  | otherwise = pure $ moveGameObjects deltaTime game
+  | otherwise = pure $ updateGameState deltaTime game
+
+-- Update the game state, including moving objects and handling collisions
+updateGameState :: Float -> GameState -> GameState
+updateGameState deltaTime game =
+    let gameAfterMovement = moveGameObjects deltaTime game
+        gameAfterPelletCollection = handlePelletCollection gameAfterMovement
+    in gameAfterPelletCollection
 
 -- Move game objects
 moveGameObjects :: Float -> GameState -> GameState
@@ -54,6 +61,21 @@ movePacMan deltaTime pacman@(PacMan x y r dir) walls
     (dx, dy) = directionToDelta dir speed deltaTime
     newX = x + dx
     newY = y + dy
+
+-- Handle pellet collection
+handlePelletCollection :: GameState -> GameState
+handlePelletCollection game =
+    let pac = pacMan game
+        remainingPellets = filter (not . pacManCollidesWithPellet pac) (pellets game)
+        collectedPellets = length (pellets game) - length remainingPellets
+        newScore = score game + (collectedPellets * 100)
+    in game { pellets = remainingPellets, score = newScore }
+
+-- Check if Pac-Man collides with a pellet
+pacManCollidesWithPellet :: PacMan -> Pellet -> Bool
+pacManCollidesWithPellet pac pellet =
+    let distanceBetween = distance (pacX pac) (pacY pac) (pelletX pellet) (pelletY pellet)
+    in distanceBetween < (pacRadius pac + 5)  -- 5 is the pellet radius
 
 -- Move a ghost
 moveGhost :: Float -> PacMan -> [Wall] -> Ghost -> Ghost
